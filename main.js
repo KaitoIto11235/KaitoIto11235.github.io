@@ -1,8 +1,57 @@
+// canvas とクォータニオンをグローバル変数とする
+let canvas;
+let q = new qtnIV();
+//let qt = q.identity(q.create());
+let disp_x = 0;
+let disp_y = 0;
+const camRadius = 20; // 原点から初期カメラ位置の奥行距離
+let mouseOddClick = false;
+
+/*
+// mousedownイベントに登録する処理
+function mouseDown(e){
+    const cw = canvas.width;
+	const ch = canvas.height;
+	const wh = 1 / Math.sqrt(cw * cw + ch * ch);
+	let x = e.clientX - canvas.offsetLeft - cw * 0.5;
+	let y = e.clientY - canvas.offsetTop - ch * 0.5;
+	const sq = Math.sqrt(x * x + y * y);
+    let invSq;
+	const r = sq * 2.0 * Math.PI * wh;
+	if(sq !== 0){
+		invSq = 1 / sq;
+		x *= invSq;
+		y *= invSq;
+	}
+	q.rotate(r, [x, y, 0], qt);
+}
+*/
+
+// mousemoveイベントに登録する処理
+function mouseMove(e){
+    const cw = canvas.width;
+	const ch = canvas.height;
+	//const wh = 1 / Math.sqrt(cw * cw + ch * ch);
+	disp_x = (e.clientX - canvas.offsetLeft - cw * 0.5) / cw; // camvasの右端にマウスが来ると、そのx座標は1
+	disp_y = -(e.clientY - canvas.offsetTop - ch * 0.5) / ch; // 画面上のy軸は下向きだからマイナス倍して上向きに
+    disp_x *= camRadius;
+    disp_y *= camRadius;
+}
+
+function mouseClick(e){
+    mouseOddClick = !mouseOddClick;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     // HTMLからcanvas要素を取得する
-    const canvas = document.getElementById('canvas');
-    canvas.width = 1260;
-    canvas.height = 520;
+    canvas = document.getElementById('canvas');
+    canvas.width = 800;
+    canvas.height = 700;
+
+    // canvasのmousemoveイベントに処理を登録
+    canvas.addEventListener('mousemove', mouseMove, true);
+    canvas.addEventListener('click', mouseClick, true);
+
 
     // canvas要素からwebglコンテキストを取得する
     const gl = canvas.getContext('webgl');
@@ -11,12 +60,26 @@ document.addEventListener('DOMContentLoaded', function () {
         alert('webgl not supported!');
         return;
     }
-    // canvasを初期化する色を設定する
-    gl.clearColor(0.0, 0.0, 0.0, 0.0);
-    // canvasを初期化する際の深度を設定する
-    gl.clearDepth(1.0);
-    // canvasを初期化する
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // エレメントへの参照を取得
+    // "MouseRole"
+	const eMouse_to_cameraRotation  = document.getElementById('Mouse_to_cameraRotation');
+	const eCamerrRotation_speed     = document.getElementById('CameraRotation_speed');
+	const eMouse_to_modelTransform  = document.getElementById('Mouse_to_modelTransform');
+    // "CameraGaze"
+	const eGazeOrigin    = document.getElementById('GazeOrigin');
+	const eGazeInginity  = document.getElementById('GazeInfinity');
+    // "sphereType"
+	const ePoints    = document.getElementById('Points');
+	const eLines     = document.getElementById('lines');
+	const eLineStrip = document.getElementById('line_strip');
+	const eLineLoop  = document.getElementById('line_loop');
+	const ePointSize = document.getElementById('point_size');
+	
+    // 点の最大ピクセル数をコンソールに出力
+	var pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+	console.log('pointSizeRange:' + pointSizeRange[0] + ' to ' + pointSizeRange[1]);
+	
 
     // 頂点シェーダとフラグメントシェーダの生成
     const v_shader = create_shader('vertexShader');
@@ -28,146 +91,194 @@ document.addEventListener('DOMContentLoaded', function () {
     let attLocation = new Array(2);
     // attributeLocationの取得、positionが何番目のAttributeかを返す
     attLocation[0] = gl.getAttribLocation(prg, 'position');
-    attLocation[1] = gl.getAttribLocation(prg, 'normal');
-    attLocation[2] = gl.getAttribLocation(prg, 'color');
-    
+    attLocation[1] = gl.getAttribLocation(prg, 'color');
+    attLocation[2] = gl.getAttribLocation(prg, 'normal');
     
     const attStride = new Array(2);
     // attribute1の要素数(この場合は xyz の3要素)
     attStride[0] = 3;
-    attStride[1] = 3;
-    attStride[2] = 4;
-    
-    
-    const torusData = torus(32, 32, 1.0, 5.0);
-    //const vertex = stripedShpere(2, 51, 20);
-    const sphereData = sphere(64, 64, 2.0, [0.25, 0.25, 0.75, 1.0]);
-
-    // VBOの生成
-    const tPosition_vbo = create_vbo(torusData.position);
-    const tNormal_vbo = create_vbo(torusData.normal);
-    const tColor_vbo = create_vbo(torusData.color);
-    const tVBOList = [tPosition_vbo, tNormal_vbo, tColor_vbo];
-    // VBOの生成
-    const sPosition_vbo = create_vbo(sphereData.position);
-    const sNormal_vbo = create_vbo(sphereData.normal);
-    const sColor_vbo = create_vbo(sphereData.color);
-    const sVBOList = [sPosition_vbo, sNormal_vbo, sColor_vbo];
-
-    
-
-    // IBOの生成
-    const tIBOIndex = create_ibo(torusData.index);
-    const sIBOIndex = create_ibo(sphereData.index);
+    attStride[1] = 4;
+    attStride[2] = 3;
 
 
     let uniLocation = new Array();
     // uniformLocationの取得　prgオブジェクトにあるシェーダのuniform変数’mvpMatrix’がuniform変数の中で何番目のものかを取得
     uniLocation[0] = gl.getUniformLocation(prg, 'mvpMatrix');
-    uniLocation[1] = gl.getUniformLocation(prg, 'mMatrix');
-    uniLocation[2] = gl.getUniformLocation(prg, 'invMatrix');
-    uniLocation[3] = gl.getUniformLocation(prg, 'lightPosition');
-    uniLocation[4] = gl.getUniformLocation(prg, 'eyeDirection');
-    uniLocation[5] = gl.getUniformLocation(prg, 'ambientColor');
+    uniLocation[1] = gl.getUniformLocation(prg, 'pointSize');
+    uniLocation[2] = gl.getUniformLocation(prg, 'mMatrix');
+    uniLocation[3] = gl.getUniformLocation(prg, 'invMatrix');
+    uniLocation[4] = gl.getUniformLocation(prg, 'lightPosition');
+    uniLocation[5] = gl.getUniformLocation(prg, 'eyeDirection');
+    uniLocation[6] = gl.getUniformLocation(prg, 'ambientColor');
+    uniLocation[7] = gl.getUniformLocation(prg, 'mousePos');
 
-    // minMatrix.js を用いた行列関連処理
-    // matIVオブジェクトを生成
-    let m = new matIV();
     
     // 各種行列の生成と初期化
+    const m = new matIV();
     let mMatrix = m.identity(m.create());
     let vMatrix = m.identity(m.create());
     let pMatrix = m.identity(m.create());
     let tmpMatrix = m.identity(m.create());
     let mvpMatrix = m.identity(m.create());
     let invMatrix = m.identity(m.create());
-    
-    // ビュー座標変換行列
-    m.lookAt([0.0, 0.0, 20.0], [0, 0, 0], [0, 1, 0], vMatrix);
-    // プロジェクション座標変換行列
-    m.perspective(90, canvas.width / canvas.height, 0.1, 100, pMatrix);
-    // ビュー×プロジェクション座標変換行列を完成させる
-    m.multiply(pMatrix, vMatrix, tmpMatrix);
 
-    // 平行光源の向き
-    const lightDirection = [-0.5, 0.5, 0.5];
     // 点光源の位置
-    const lightPosition = [0.0, 5.0, 5.0];
-    // 視線ベクトル
-    const eyeDirection = [0.0, 0.0, 20.0];
-    // 乱反射によって空間全てを少しだけ照らす環境光
-    const ambientColor = [0.1, 0.1, 0.1, 0.1];
-
-    // カリングを有効に
-    gl.enable(gl.CULL_FACE);
-    // 深度テストを有効に
-    gl.enable(gl.DEPTH_TEST);
-    // 深度テストの評価方法の指定
-    gl.depthFunc(gl.LEQUAL);
+    const lightPosition = [0.0, 0.0, 10.0];
+    // 環境光の色
+    const ambientColor = [0.1, 0.1, 0.1, 1.0];
     
+    // モデルの頂点データを取得
+    let torusData;
+    torusData = torus(64, 64, 0.5, 1.5);
+    const stripedSphereData = stripedSphere(1, 51, 20);
+    const pointSphere = sphere(16, 16, 1.0);
+    
+    // トーラスのVBOの生成
+    const tPos = create_vbo(torusData.position);
+    const tNor = create_vbo(torusData.normal);
+    const tCol = create_vbo(torusData.color);
+    const tVBOList = [tPos, tCol, tNor];
+    const tIBO = create_ibo(torusData.index);
+    // 縞球のVBO生成
+    const sPos = create_vbo(stripedSphereData.position);
+    const sNor = create_vbo(stripedSphereData.normal);
+    const sCol = create_vbo(stripedSphereData.color);
+    const sVBOList = [sPos, sCol, sNor];
+    const sIBO = create_ibo(stripedSphereData.index);
+    // 点球のVBO生成
+    const pPos = create_vbo(pointSphere.position);
+    const pCol = create_vbo(pointSphere.color);
+    const pVBOList = [pPos, pCol, pPos];
 
-    // カウンタの宣言
+    // 各種フラグを有効化する
+	gl.enable(gl.DEPTH_TEST);
+	gl.depthFunc(gl.LEQUAL);
+	gl.enable(gl.BLEND);
+
+    // カウンタ
     let count = 0;
+
+    // カメラ回転のための累積クォータニオンを作成
+    let accumQt = q.identity(q.create());
+    let camPosition = [0.0, 0.0, camRadius];
+    let camUpDirection = [0.0, 1.0, 0.0];
+    // それまでの回転を考慮したマウス座標
+    let dispPosition = [0, 0, 0];
 
     // 恒常ループ
     (function(){
         // canvasを初期化
-        gl.clearColor(0.0, 0.0, 0.0, 1.0);
-        gl.clearDepth(1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+        // 視点ベクトル
+        const eyeDirection = camPosition;
+		// カウンタからラジアンを算出
+		count++;
+		//const rad = (count % 360) * Math.PI / 180;
+		const rad = count * Math.PI / 180;
+		
 
-        count++;
+        let mouseRole = " ";  // ウィンドウのチェックボックスによって、canvas上でのマウスの役割を変化させる
+		if(eMouse_to_cameraRotation.checked){ // マウスの方向にカメラが動く
+            mouseRole = "cameraRotation";
+        }else if(eMouse_to_modelTransform.checked){ // マウスの方向にモデルが伸びる
+            mouseRole = "modelTransform";
+        }
 
-        // カウンタを元にラジアンと各種座標を算出
-        const rad = (count % 360) * Math.PI / 180;
-        const tx = Math.cos(rad) * 3.5;
-        const ty = Math.sin(rad) * 3.5;
-        const tz = Math.sin(rad) * 3.5;
+        let cameraGaze = [0, 0, 0];
+        if(eGazeOrigin.checked){
+            cameraGaze = [0, 0, 0];
+        }else if(eGazeInginity.checked){
+            cameraGaze = [0, 0, -1000];
+        }
 
+        if(mouseRole === "cameraRotation"){
+            // マウス座標に現在までの回転を加えることで、カメラから見たマウスの座標を算出
+            q.toVecIII([disp_x, disp_y, 0], accumQt, dispPosition);
+            // カメラ座標とマウス座標から回転軸としての法線ベクトルを計算
+            const axisVec = create_axis(camPosition, dispPosition, [0, 0, 0]);
+            let qt = q.identity(q.create());
+            //画面が正方形のとき、画面の四隅にマウスがあるときに係数の速さで回転する。
+            const rotateSpeed = 0.01 * eCamerrRotation_speed.value * Math.sqrt(disp_x ** 2 + disp_y ** 2)/(Math.sqrt(2) * camRadius);
+            q.rotate(rotateSpeed, axisVec, qt);
+            q.multiply(qt, accumQt, accumQt);
+            q.toVecIII(camPosition, qt, camPosition);
+            q.toVecIII(camUpDirection, qt, camUpDirection);
+        }
+        if(mouseRole === "modelTransform"){
+            // マウス座標に現在までの回転を加えることで、カメラから見たマウスの座標を算出
+            q.toVecIII([disp_x, disp_y, 0], accumQt, dispPosition);
+            gl.uniform3fv(uniLocation[7], dispPosition);
+        }else{
+            gl.uniform3fv(uniLocation[7], [0.0, 0.0, 0.0]); // ここでmousePosに0ベクトルを渡すことで、内積が0となり、モデルの変形が起きないようにしている。
+        }
+        
+		// ビュー×プロジェクション座標変換行列
+		m.lookAt(camPosition, cameraGaze, camUpDirection, vMatrix);
+		m.perspective(45, canvas.width / canvas.height, 0.1, 100, pMatrix);
+		m.multiply(pMatrix, vMatrix, tmpMatrix);
+
+
+        // トーラス用モデル変換行列
+		m.identity(mMatrix);
+		m.multiply(tmpMatrix, mMatrix, mvpMatrix);
         // トーラスのVBOとIBOをセット
         set_attribute(tVBOList, attLocation, attStride);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tIBOIndex);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tIBO);
+        // uniform変数の登録と描画
+		gl.uniformMatrix4fv(uniLocation[0], false, mvpMatrix);
+		gl.uniformMatrix4fv(uniLocation[2], false, mMatrix);
+		gl.uniformMatrix4fv(uniLocation[3], false, invMatrix);
+		gl.uniform3fv(uniLocation[4], lightPosition);
+		gl.uniform3fv(uniLocation[5], eyeDirection);
+		gl.uniform4fv(uniLocation[6], ambientColor);
+		gl.drawElements(gl.TRIANGLES, torusData.index.length, gl.UNSIGNED_SHORT, 0);
 
-        m.identity(mMatrix);
-        m.translate(mMatrix, [tx, -ty, -tz], mMatrix);
-        m.rotate(mMatrix, -rad, [0, 1, 1], mMatrix);
-        // モデル座標変換行列から逆行列を生成
+
+        // // 縞球用モデル変換行列
+		m.identity(mMatrix);
+        m.translate(mMatrix, [camRadius/1 * Math.cos(rad), camRadius/1 * Math.sin(rad)*0, camRadius/1 * Math.sin(rad)], mMatrix);
+		m.multiply(tmpMatrix, mMatrix, mvpMatrix);
         m.inverse(mMatrix, invMatrix);
+        // 縞球のVBOをセット
+		set_attribute(sVBOList, attLocation, attStride);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sIBO);
+        // uniform変数の登録と描画
+		gl.uniformMatrix4fv(uniLocation[0], false, mvpMatrix);
+        gl.uniformMatrix4fv(uniLocation[3], false, invMatrix);
+        gl.uniform3fv(uniLocation[7], [0.0, 0.0, 0.0]); // 球は常に伸びないようにする
+        gl.drawElements(gl.TRIANGLES, stripedSphereData.index.length, gl.UNSIGNED_SHORT, 0);
 
-        // モデル1の座標変換行列を完成させレンダリングする
-        m.multiply(tmpMatrix, mMatrix, mvpMatrix);
-        // フラグメントシェーダのuniformLocationへ座標変換行列を登録する（一つ目のモデル）
-        gl.uniformMatrix4fv(uniLocation[0], false, mvpMatrix);
-        gl.uniformMatrix4fv(uniLocation[1], false, mMatrix);
-        gl.uniformMatrix4fv(uniLocation[2], false, invMatrix);
-        gl.uniform3fv(uniLocation[3], lightPosition);
-        gl.uniform3fv(uniLocation[4], eyeDirection);
-        gl.uniform4fv(uniLocation[5], ambientColor);
-        gl.drawElements(gl.TRIANGLES, torusData.index.length, gl.UNSIGNED_SHORT, 0);
 
-        // トーラスのVBOとIBOをセット
-        set_attribute(sVBOList, attLocation, attStride);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sIBOIndex);
-        
-        // モデル2はY軸を中心に回転する
-        m.identity(mMatrix);
-        m.translate(mMatrix, [-tx, ty, tz], mMatrix);
-        // モデル座標変換行列から逆行列を生成
+		// 点のサイズをエレメントから取得
+		const pointSize = ePointSize.value / 10;
+        // 線のプリミティブタイプを判別
+		let lineOption = 0;
+		if(ePoints.checked){lineOption = gl.POINTS;}
+		if(eLines.checked){lineOption = gl.LINES;}
+		if(eLineStrip.checked){lineOption = gl.LINE_STRIP;}
+		if(eLineLoop.checked){lineOption = gl.LINE_LOOP;}
+        // 点球用モデル変換行列
+		m.identity(mMatrix);
+        m.translate(mMatrix, [camRadius/3 * Math.cos(rad), camRadius/8 * Math.cos(rad), camRadius/3 * Math.sin(rad)], mMatrix);
+		m.multiply(tmpMatrix, mMatrix, mvpMatrix);
         m.inverse(mMatrix, invMatrix);
-        // モデル2の座標変換行列を完成させレンダリングする
-        m.multiply(tmpMatrix, mMatrix, mvpMatrix);
+        // 点球のVBOをセット
+		set_attribute(pVBOList, attLocation, attStride);
+        // uniform変数の登録と描画
+		gl.uniformMatrix4fv(uniLocation[0], false, mvpMatrix);
+		gl.uniform1f(uniLocation[1], pointSize);
+        gl.uniformMatrix4fv(uniLocation[3], false, invMatrix);
+        gl.uniform3fv(uniLocation[7], [0.0, 0.0, 0.0]); // 球は常に伸びないようにする
+		gl.drawArrays(lineOption, 0, pointSphere.position.length / 3);
+		
 
-        gl.uniformMatrix4fv(uniLocation[0], false, mvpMatrix);
-        gl.uniformMatrix4fv(uniLocation[1], false, mMatrix);
-        gl.uniformMatrix4fv(uniLocation[2], false, invMatrix);
-        gl.drawElements(gl.TRIANGLES, sphereData.index.length, gl.UNSIGNED_SHORT, 0);
-
-
-        // コンテキストの再描画
         gl.flush();
-        
-        // ループのために再帰呼び出し
-        setTimeout(arguments.callee, 1000 / 100);
+		
+		// ループのために再帰呼び出し
+		setTimeout(arguments.callee, 1000 / 30);
     })();
 
 
@@ -298,7 +409,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // トーラスのモデルデータを生成する関数
-    function torus(row, column, irad, orad, color){
+    function torus(row, column, irad, orad,color){
         let pos = new Array();
         let nor = new Array();
         let col = new Array(); 
@@ -313,14 +424,14 @@ document.addEventListener('DOMContentLoaded', function () {
             {
                 // 管を作る
                 const tr = 2 * Math.PI * ii / column;
-                const tx = (rr * irad + orad) * Math.cos(tr);
+                let tx = (rr * irad + orad) * Math.cos(tr);
                 const ty = ry * irad;
                 const tz = (rr * irad + orad) * Math.sin(tr);
                 const rx = rr * Math.cos(tr);       // 頂点Aの法線は、トーラスを頂点Aを含むよう輪切りし、
                 const rz = rr * Math.sin(tr);       // その中心を原点とした時の、頂点Aの座標に一致するからこの計算で良い。
                 if(color)
                 {
-                    const tc = color;
+                    var tc = color;
                 }
                 else
                 {
@@ -364,7 +475,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 縞模様の球体を自作
-    function stripedShpere(radius, frequency, roundness)
+    function stripedSphere(radius, frequency, roundness)
     {
         const pos = new Array();
         const nor = new Array();
@@ -403,19 +514,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 球体を生成する関数
     function sphere(row, column, rad, color){
-        var pos = new Array(), nor = new Array(),
+        let pos = new Array(), nor = new Array(),
             col = new Array(), idx = new Array();
-        for(var i = 0; i <= row; i++){
-            var r = Math.PI / row * i;
-            var ry = Math.cos(r);
-            var rr = Math.sin(r);
-            for(var ii = 0; ii <= column; ii++){
-                var tr = Math.PI * 2 / column * ii;
-                var tx = rr * rad * Math.cos(tr);
-                var ty = ry * rad;
-                var tz = rr * rad * Math.sin(tr);
-                var rx = rr * Math.cos(tr);
-                var rz = rr * Math.sin(tr);
+        for(let i = 0; i <= row; i++){
+            const r = Math.PI / row * i;
+            const ry = Math.cos(r);
+            const rr = Math.sin(r);
+            for(let ii = 0; ii <= column; ii++){
+                const tr = Math.PI * 2 / column * ii;
+                const tx = rr * rad * Math.cos(tr);
+                const ty = ry * rad;
+                const tz = rr * rad * Math.sin(tr);
+                const rx = rr * Math.cos(tr);
+                const rz = rr * Math.sin(tr);
                 if(color){
                     var tc = color;
                 }else{
@@ -435,5 +546,63 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
         return {position : pos, normal : nor, color : col, index : idx};
+    }
+
+    // テクスチャを生成する関数
+	function create_texture(source, index){
+		// イメージオブジェクトの生成
+		const img = new Image();
+		
+		// データのオンロードをトリガーにする
+		img.onload = function(){
+			// テクスチャオブジェクトの生成
+			const tex = gl.createTexture();
+			
+			// テクスチャをバインドする
+			gl.bindTexture(gl.TEXTURE_2D, tex);
+			
+			// テクスチャへイメージを適用
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			
+			// ミップマップを生成
+			gl.generateMipmap(gl.TEXTURE_2D);
+			
+			// テクスチャのバインドを無効化
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			
+			// 生成したテクスチャを変数に代入
+			switch(index){
+				case 0:
+					texture0 = tex;
+					break;
+				case 1:
+					texture1 = tex;
+					break;
+				default:
+					break;
+			}
+		};
+		
+		// イメージオブジェクトのソースを指定
+		img.src = source;
+	}
+
+    // 法線ベクトルを返す関数
+    function create_axis(pos1, pos2, originPos){
+        const vec2 = [(pos2[0] - pos1[0]), (pos2[1] - pos1[1]), (pos2[2] - pos1[2])];
+        const vec3 = [(originPos[0] - pos1[0]), (originPos[1] - pos1[1]), (originPos[2] - pos1[2])];
+        const axisVec = [(vec2[1] * vec3[2] - vec2[2] * vec3[1]),
+                        (vec2[2] * vec3[0] - vec2[0] * vec3[2]),
+                        (vec2[0] * vec3[1] - vec2[1] * vec3[0])];
+        const vecLen = Math.sqrt(axisVec[0] ** 2 + axisVec[1] ** 2 + axisVec[2] ** 2);
+        //console.log(pos2[0] - pos1[0]);
+        
+        //console.log(axisVec);
+        //console.log(axisVec/vecLen);
+        if(vecLen !== 0){
+            return [axisVec[0]/vecLen, axisVec[1]/vecLen, axisVec[2]/vecLen];
+        }else{
+            return [0, 0, 0];
+        }
     }
 });

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
   <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <title>WebGL入門</title>
-    <script src="./main.js"></script> <!-- main.jsを読み込む -->
-    <script src="./minMatrix.js"></script>
+    <script src="minMatrixb.js"></script>
+    <script src="main.js"></script> <!-- main.jsを読み込む -->
 
     <!-- create vertex shader -->
     <!-- attributeをつけた変数に、WebGL側であらかじめ仕込まれたデータが渡される -->
@@ -16,26 +17,33 @@
      そのため、モデル変換行列もシェーダに渡すことで、点光源のライトベクトルが計算できる。 -->
     <script id="vertexShader" type="x-shader/x-vertex">
       attribute vec3 position;
-      attribute vec3 normal;
       attribute vec4 color;
+      attribute vec3 normal;
+      uniform vec3 mousePos;
       uniform mat4 mvpMatrix;
+      uniform float pointSize;
       uniform mat4 mMatrix;
       varying vec3 vPosition;
       varying vec3 vNormal;
       varying vec4 vColor;
 
       void main(void){
-        vPosition      = (mMatrix * vec4(position, 1.0)).xyz;
+        float innerProduct = dot(normal, normalize(mousePos));
+        vec3 position2 = vec3(position.x + pow(max(0.0, innerProduct), 4.0) * (mousePos.x - position.x), 
+                              position.y + pow(max(0.0, innerProduct), 4.0) * (mousePos.y - position.y), 
+                              position.z + pow(max(0.0, innerProduct), 4.0) * (mousePos.z - position.z));
+        vPosition      = (mMatrix * vec4(position2, 1.0)).xyz;
         vNormal        = normal;
         vColor         = color;
-        gl_Position    = mvpMatrix * vec4(position, 1.0);
+        gl_Position    = mvpMatrix * vec4(position2, 1.0);
+        gl_PointSize   = pointSize;
       }
     </script>
 
     <!-- create fragment shader -->
     <script id="fragmentShader" type="x-shader/x-fragment">
       precision mediump float;
-
+      
       uniform mat4 invMatrix;
       uniform vec3 lightPosition;
       uniform vec3 eyeDirection;
@@ -45,14 +53,15 @@
       varying vec4 vColor;
 
       void main(void){
-        vec3  lightVec  = lightPosition - vPosition;
-        vec3  invLight  = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
-        vec3  invEye    = normalize(invMatrix * vec4(eyeDirection, 0.0)).xyz;
-        vec3  halfLE    = normalize(invLight + invEye);
-        float diffuse   = clamp(dot(vNormal, invLight), 0.0, 1.0);
-        float specular  = pow(clamp(dot(vNormal, halfLE), 0.0, 1.0), 50.0);
-        vec4  destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
-        gl_FragColor    = destColor;
+        vec3 lightVec = lightPosition - vPosition;
+        vec3 invLight = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
+        vec3 invEye   = normalize(invMatrix * vec4(eyeDirection, 0.0)).xyz;
+        vec3 halfLE   = normalize(invLight + invEye);
+
+        float diffuse = clamp(dot(vNormal, invLight), 0.0, 1.0) + 0.2;
+        float specular = pow(clamp(dot(vNormal, halfLE), 0.0, 1.0), 50.0);
+        vec4 destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
+        gl_FragColor  = destColor;
       }
     </script>
   </head>
@@ -60,5 +69,44 @@
   <body>
     <!-- bodyタグの中にCanvasを配置する -->
     <canvas id="canvas"></canvas>
+    <h1>CheckParameter</h1>
+    <h2>MouseRole</h2>
+    <p>
+      <input id="Mouse_to_Null" type="radio" name="mouseRole" checked> NULL
+    </p>
+    <p>
+      <input id="Mouse_to_cameraRotation" type="radio" name="mouseRole"> ROTATION
+    </p>
+    <p>
+      <input id="CameraRotation_speed" type="range" value="1" min="1" max="10"> speed
+    </p>
+    <p>
+      <input id="Mouse_to_modelTransform" type="radio" name="mouseRole"> TRANSFORM
+    </p>
+
+    <h2>CameraGaze</h2>
+    <p>
+      <input id="GazeOrigin" type="radio" name="cameraGaze" checked> [0, 0, 0]
+    </p>
+    <p>
+      <input id="GazeInfinity" type="radio" name="cameraGaze"> [0, 0, -1000]
+    </p>
+    
+    <h2>sphereType</h2>
+    <p>
+      <input id="point_size" type="range" value="10" min="10" max="100"> point size (1 to 10 pixels)
+    </p>
+    <p>
+      <input id="Points" type="radio" name="line" checked> gl.POINTS
+    </p>
+    <p>
+      <input id="lines" type="radio" name="line"> gl.LINES
+    </p>
+    <p>
+      <input id="line_strip" type="radio" name="line"> gl.LINE_STRIP
+    </p>
+    <p>
+      <input id="line_loop" type="radio" name="line"> gl.LINE_LOOP
+    </p>
   </body>
 </html>
